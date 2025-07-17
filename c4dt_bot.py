@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 from dotenv import load_dotenv
 # from agno.models.lmstudio import LMStudio
 # from agno.models.openai import OpenAIChat
@@ -37,6 +38,9 @@ class MatrixLogger(ProgressLogger):
     
     async def msg(self, message: str) -> None:
         print(self.room, message)
+        with open(f"{data_dir}/logger.log", "a") as f:
+            f.write(datetime.datetime.now().strftime("%d-%b-%Y (%H:%M:%S.%f)") + message)
+            
         await bot.api.send_text_message(self.room.room_id, message)
         
     async def log(self, message: str) -> None:

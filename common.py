@@ -9,6 +9,11 @@ import httpx
 
 load_dotenv()
 data_dir = os.environ.get("DATA_DIR", ".")
+try:
+    os.mkdir(data_dir)
+except:
+    ""
+
 if os.environ.get("ANTHROPIC_API_KEY", "0") != "0":
     print("Using Anthropic Claude")
     model=Claude(id="claude-3-7-sonnet-latest")
@@ -84,7 +89,7 @@ def get_response_cached(url: str) -> httpx.Response:
     
 @cache_to_file
 def get_url_cached(url: str) -> str:
-    return get_response_cached(url).text
+    return get_response_cached(url).text[:200000]
 
 @cache_to_file
 def get_json_cached(url: str) -> str:
