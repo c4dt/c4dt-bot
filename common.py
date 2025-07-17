@@ -8,6 +8,7 @@ import json
 import httpx
 
 load_dotenv()
+data_dir = os.environ.get("DATA_DIR", ".")
 if os.environ.get("ANTHROPIC_API_KEY", "0") != "0":
     print("Using Anthropic Claude")
     model=Claude(id="claude-3-7-sonnet-latest")
@@ -23,11 +24,35 @@ else:
     print("Using LM Studio")
     model=LMStudio()
 
+class ProgressLogger:
+    async def msg(self, message: str) -> None:
+        raise NotImplementedError
+    
+    async def log(self, message: str) -> None:
+        await self.msg(f"LOG: {message}")
+    
+    async def debug(self, message: str) -> None:
+        await self.msg(f"DBG: {message}")
+    
+    async def trace(self, message: str) -> None:
+        await self.msg(f"TRC: {message}")
+    
+    async def error(self, message: str) -> None:
+        await self.msg(f"ERR: {message}")
+
+    async def panic(self, message: str) -> None:
+        await self.msg(f"PANIC: {message}")
+        
+
+class StdLogger(ProgressLogger):
+    async def msg(self, message: str) -> None:
+        print(message)
+
 def cache_to_file(func):
     """Decorator to cache function results to a local file."""
     
     def wrapper(*args):
-        cache_file = f"{func.__name__}_cache.json"
+        cache_file = f"{data_dir}/{func.__name__}_cache.json"
         # Load cache from file if it exists
         if os.path.exists(cache_file):
             with open(cache_file, "r") as f:
@@ -64,4 +89,3 @@ def get_url_cached(url: str) -> str:
 @cache_to_file
 def get_json_cached(url: str) -> str:
     return get_response_cached(url).json()
-

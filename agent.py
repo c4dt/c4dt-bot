@@ -1,21 +1,30 @@
-from typing import List
-from common import model
+import sys
+import traceback
+from common import ProgressLogger, StdLogger, model, data_dir
 from agno.agent import Agent, RunResponse
 from pydantic import BaseModel, Field
 from enum import Enum
 from textwrap import dedent
-from weekly_picks import list_news, write_weekly, order_news, UrlList, WeeklyPick
+from weekly_picks import list_news, set_logger as set_wp_logger, write_weekly, order_news, UrlList, WeeklyPick
 import json
 import os 
 
-FILE_PERSONALITIES = "data/personalities.json"
-FILE_WEEKLY_URLS = "data/weekly_urls.json"
+agent_logger = StdLogger()
+
+def set_logger(logger: ProgressLogger):
+    global agent_logger
+    agent_logger = logger
+    set_wp_logger(logger)
+
+FILE_PERSONALITIES = f"{data_dir}/personalities.json"
+FILE_WEEKLY_URLS = f"{data_dir}/weekly_urls.json"
 
 AGENT_CONFIG = {
     "model": model,
     "use_json_mode": True,
     "add_state_in_messages": True,
-    "show_tool_calls":True,
+    "add_context": True,
+    "show_tool_calls": False,
     # "debug_mode":True
 }
 
@@ -43,8 +52,6 @@ AGENT_PREPROMPT = dedent("""\
         This can be new attacks, defenses, it can be about governments or companies, or individuals.
         These weekly picks are sent out in a newsletter to our partners, who appreciate these
         filtered news from our side.
-        
-        Currently the user 'user' is writing you a message.
     """)
 
 class AgCmd(Enum):
@@ -52,78 +59,86 @@ class AgCmd(Enum):
     These are the arguments to the different commands:
 
             - HELP - no arguments
-            - PERSONALITY - the new personality description the user gives
+            - PERSONAL_INTEREST - the new personal interest description the user gives
             - WEEKLY - 1st mandatory argument is the number of weekly picks the user wants - per default it's 3 picks. Optional 2nd argument is specifications of subject in weekly picks
             - WEEKLY_URLS - a list of URLs for the weekly picks
             - GENERAL - the question the user wants the bot to answer
     """
     HELP = "1"
-    PERSONALITY = "2"
+    PERSONAL_INTEREST = "2"
     WEEKLY = "3"
     WEEKLY_URLS = "4"
     GENERAL = "5"
     
     def help() -> str:
-        """
-        The following commands are available:
-
-            - HELP - no arguments
-            - PERSONALITY - the new personality description the user gives
-            - WEEKLY - the number of weekly picks, and an eventual specification of subjects
-            - WEEKLY_URLS - a list of URLs for the weekly picks
-            - GENERAL - the question the user wants the bot to answer
-        """
+        return AgCmd.__doc__
 
 class AgentCommand(BaseModel):
     command: AgCmd = Field(..., description="The command to execute")
     arguments: list[str] = Field(..., description="The arguments to the command")
 
-agent_list_news = Agent(
+agent_get_command = Agent(
     **AGENT_CONFIG,
     description="Identifies the command needed to launch",
-    session_state={"user": "", "personality": ""},
+    context={"user": "", "personal_interest": "", "help": AgCmd.help()},
     response_model=AgentCommand,
     instructions=dedent(AGENT_PREPROMPT + """\
         As a first step, evaluate what kind of message the user writes to you.
-        The following possibilities are available:
-        
-        - help - the user wants to know what they can do
-        - personality - the user wants to update their personality profile
-        - weekly picks - one of the 
-        
+        The following possibilities are listed in the help context.
         Create your response to fit the 'AgentCommand' response model. Do not write anything else,
         your output will be interpreted as JSON.
         """),
 )
 
-agent_update_personality = Agent(
+agent_update_personal_interest = Agent(
     **AGENT_CONFIG,
-    description="Updates the personality of the user",
-    session_state={"user": "", "personality": ""},
-    response_model=AgentCommand,
+    description="Updates the personal interest of the user",
+    context={"user": "unknown", "personal_interest": ""},
     instructions=dedent(AGENT_PREPROMPT + """\
-        Please look at the message of the user and the previous personality, and return
-        an updated personality.
-        The personality of the user should be one paragraph with up to 5 sentences, not more.
+        Please look at the message of the user and the previous personal interest, and return
+        an updated personal interest.
+        The goal of the personal interest is to use it when looking for weekly picks.
+        So the personal interest information should contain their preferences with regard to news
+        regarding digital trust.
+        Ignore other personal interest information which have nothing to do with the weekly picks.
+        The personal interest of user should be one paragraph with up to 5 sentences, not more.
         So you need to merge the information in the current message to the
-        existing personality, eventually summarizing previous information about their
-        personality to make space for new personality information.
+        existing personal interest, eventually summarizing previous information about their
+        personal interest to make space for new personal interest information.
+        
+        If there is no new information about the user, simply return the previous personal interest,
+        without adding anything else like that there is no new information about the user.
         """),
 )
 
-def get_personailties() -> dict[str, str]:
+agent_general = Agent(
+    **AGENT_CONFIG,
+    description="Run a general query from the user",
+    context={"user": "unknown", "personal_interest": ""},
+    instructions=dedent(AGENT_PREPROMPT + """\
+        The user entered a general query.
+        Answer to the best of your knowledge.
+        Take into account the personal_interest of the user.
+        """),
+)
+
+def get_personalties() -> dict[str, str]:
     if os.path.exists(FILE_PERSONALITIES):
         with open(FILE_PERSONALITIES, "r") as f:
             return json.load(f)
     else:
         return {}
 
-def get_personality(user) -> str:
-    return get_personailties[user]
+def get_personal_interest(user) -> str:
+    personalities = get_personalties()
+    if user in personalities:
+        return personalities[user]
+    else:
+        return "An anonymous, privacy-conscious user"
 
-def set_personailty(user, personality) -> str:
-    personalities = get_personailties()
-    personalities[user] = personality
+def set_personal_interest(user, personal_interest) -> str:
+    personalities = get_personalties()
+    personalities[user] = personal_interest
     with open(FILE_PERSONALITIES, "w") as f:
         json.dump(personalities, f)
     
@@ -139,69 +154,106 @@ def get_weekly_urls(user) -> list[str]:
     if user in urls:
         return urls[user]
     else:
-        return["https://news.ycombinator.com", "https://www.bbc.com/innovation", "https://www.404media.co/"]
+        return["https://news.ycombinator.com"]
+        # return["https://news.ycombinator.com", "https://www.bbc.com/innovation", "https://www.404media.co/"]
 
 def set_weekly_urls(user: str, args: list[str]):
     urls = get_weekly_urls_all()
     urls[user] = args
-    with open(FILE_WEEKLY_URLS, "w") as f:
+    with open(FILE_WEEKLY_URLS + ".tmp", "w") as f:
         json.dump(urls, f)
+
+    # In case the dump failed for some reason.
+    os.rename(FILE_WEEKLY_URLS + ".tmp", FILE_WEEKLY_URLS)
     
-def get_command(user, message) -> AgentCommand:
-    list_news.session_state["user"] = user
-    reply: RunResponse = list_news.run(message)
+async def get_command(user, message) -> AgentCommand:
+    await agent_logger.log("Parsing command")
+    agent_get_command.context["user"] = user
+    reply: RunResponse = await agent_get_command.arun(message)
     if isinstance(reply.content, AgentCommand):
+        await agent_logger.debug(f"Found command {reply.content.command}")
         return reply.content
     else:
         raise Exception("Couldn't interpret command")
 
-def get_weekly(user, args) -> str:
-    list_news.session_state={"personality": get_personality(user), "info": args[0], "news_list": []}
+async def get_weekly(user, args) -> str:
+    number_takes = (args + ["3"])[0]
+    info = (args + ["", ""])[1]
 
-    for url in get_weekly_urls(user):
-        list_news.run(url)
+    personal_interest = get_personal_interest(user)
+    list_news.session_state = {"news_list": []}
+    list_news.context={"personal_interest": personal_interest, "info": info}
+    urls = get_weekly_urls(user)
 
-    order_news.session_state = list_news.session_state
-    # order_news.session_state["news_list"] = []
-    print("List of news articles:", order_news.session_state["news_list"])
+    await agent_logger.log(f"Getting a total of {number_takes} picks with info='{info}' from urls={urls}")
 
-    ordered: RunResponse = order_news.run("follow the instructions")
+    for url in urls:
+        await agent_logger.debug(f"Scraping {url} for articles")
+        await list_news.arun(url)
+
+    await agent_logger.debug(f"Got a total of {len(list_news.session_state["news_list"])} articles")
+
+    await agent_logger.log("Ordering articles by relevance")
+    order_news.context["news_list"] = list_news.session_state["news_list"]
+    order_news.context["number_takes"] = number_takes
+    ordered: RunResponse = await order_news.arun("follow the instructions")
+
     if not isinstance(ordered.content, UrlList):
-        print("Oups - something went wrong with the content:", ordered.content)
-        exit(1)
+        await agent_logger.panic("Oups - something went wrong with the content:", ordered.content)
+        raise Exception("Couldn't order articles")
 
-    print("Ordered list of URLs:", ordered.content.url_list)
-    write_weekly.session_state = order_news.session_state
+    await agent_logger.debug(f"Ordered list of URLs: {ordered.content.url_list}")
+
+    await agent_logger.log("Starting to create summary")
+    write_weekly.context["personal_interest"] = personal_interest
     takes = []
     for article in ordered.content.url_list:
-        wp: RunResponse = write_weekly.run(article.url)
+        await agent_logger.debug(f"Summarizing {article.url}")
+        write_weekly.context["article"] = article
+        wp: RunResponse = await write_weekly.arun(article.url)
         if isinstance(wp.content, WeeklyPick):
-            takes.append(f"My take: \"{wp.content.description}\" - {wp.content.url}")
+            take = f"\"{wp.content.description}\" - {wp.content.url}"
+            takes.append(take)
         else:
-            print("Oups - weekply pick failed:", wp.content)
+            await agent_logger.error("Oups - weekply pick failed:", wp.content)
 
-    return "\n\n".join(takes)
+    return takes
 
-def update_personality(user, message):
-    agent_update_personality.session_state = {"user": user, "personality": get_personality(user)}
-    answer = agent_update_personality.run(message)
-    print(f"Updating personality from ${get_personality(user)} to ${answer}")
-    set_personailty(user, answer)
+async def update_personal_interest(user, message):
+    agent_update_personal_interest.context = {"user": user, "personal_interest": get_personal_interest(user)}
+    answer = await agent_update_personal_interest.arun(message)
+    print(f"Updating personal interest\nfrom {get_personal_interest(user)}\nto {answer.content}")
+    set_personal_interest(user, answer.content)
+    
+async def general_query(user, message):
+    agent_general.context = {"user": user, "personal_interest": get_personal_interest(user)}
+    await agent_logger.log("Running generic query (without history!)")
+    answer = await agent_general.arun(message)
+    return answer.content
 
-def answer_message(user, message) -> str:
+async def answer_message(user, message) -> str:
+    set_logger(agent_logger)
     try:
-        cmd = get_command(user, message)
-        if cmd == AgCmd.HELP:
+        cmd = await get_command(user, message)
+        if cmd.command == AgCmd.HELP:
             return AgCmd.help()
 
-        update_personality(user, cmd.arguments)
+        await agent_logger.log("Updating personal interests")
+        await update_personal_interest(user, cmd.arguments)
 
-        if cmd == AgCmd.PERSONALITY:
-            return f"Updated personality to: ${get_personality(user)}"
-        elif cmd == AgCmd.WEEKLY:
-            return f"Your weekly picks:\n\n${get_weekly(user, cmd.arguments)}"
-        elif cmd == AgCmd.WEEKLY_URLS:
+        if cmd.command == AgCmd.PERSONAL_INTEREST:
+            return f"Updated personal interest to: {get_personal_interest(user)}"
+        elif cmd.command == AgCmd.WEEKLY:
+            return f"Your weekly picks:\n\n{"\n\n".join(await get_weekly(user, cmd.arguments))}"
+        elif cmd.command == AgCmd.WEEKLY_URLS:
             set_weekly_urls(user, cmd.arguments)
-            return f"Updated urls for your weekly picks:\n\n ${get_weekly_urls(user)}"
-    except:
-        return f"Sorry - I couldn't infer what you meant. Here is what I know to do: ${AgCmd.help()}"
+            return f"Updated urls for your weekly picks:\n\n {get_weekly_urls(user)}"
+        elif cmd.command == AgCmd.GENERAL:
+            return await general_query(user, cmd.arguments)
+            
+    except Exception as e:
+        tb_lines = traceback.format_exception(*sys.exc_info())
+        await agent_logger.error(e)
+        await agent_logger.panic(''.join(tb_lines))  # Full formatted traceback
+
+        return f"Sorry - I couldn't infer what you meant. Here is what I know how to do: {AgCmd.help()}"
