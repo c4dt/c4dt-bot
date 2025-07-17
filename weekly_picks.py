@@ -1,25 +1,17 @@
+# weekly_picks - how to scrape websites for interesting articles - Licensed under AGPLv3 or later
+
 from textwrap import dedent
-from agno.agent import Agent, RunResponse
+from agno.agent import Agent
 from agno.tools.firecrawl import FirecrawlTools
 from pydantic import BaseModel, Field
 from markdownify import markdownify as md
-from common import ProgressLogger, StdLogger, get_url_cached, model
+from common import ProgressLogger, StdLogger, get_url_cached, AGENT_CONFIG
 
 wp_logger = StdLogger()
 
 def set_logger(logger: ProgressLogger):
     global wp_logger
     wp_logger = logger
-
-# Global configuration for all agents
-AGENT_CONFIG = {
-    "model": model,
-    "use_json_mode": True,
-    "add_state_in_messages": True,
-    "add_context": True,
-    "show_tool_calls": False,
-    # "debug_mode": True
-}
 
 class NewsSummary(BaseModel):
     url: str = Field(..., description="The URL to the article")

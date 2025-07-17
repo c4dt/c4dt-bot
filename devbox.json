@@ -10,7 +10,7 @@
       ". $VENV_DIR/bin/activate"
     ],
     "scripts": {
-      "run": [
+      "bot": [
         "python c4dt_bot.py"
       ]
     }

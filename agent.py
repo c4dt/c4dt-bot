@@ -1,6 +1,8 @@
+# agent - definitions of the surrounding agents - Licensed under AGPLv3 or later
+
 import sys
 import traceback
-from common import ProgressLogger, StdLogger, model, data_dir
+from common import ProgressLogger, StdLogger, data_dir, AGENT_CONFIG
 from agno.agent import Agent, RunResponse
 from pydantic import BaseModel, Field
 from enum import Enum
@@ -18,15 +20,6 @@ def set_logger(logger: ProgressLogger):
 
 FILE_PERSONALITIES = f"{data_dir}/personal_interests.json"
 FILE_WEEKLY_URLS = f"{data_dir}/weekly_urls.json"
-
-AGENT_CONFIG = {
-    "model": model,
-    "use_json_mode": True,
-    "add_state_in_messages": True,
-    "add_context": True,
-    "show_tool_calls": False,
-    # "debug_mode":True
-}
 
 AGENT_PREPROMPT = dedent("""\
         You are a bot in a matrix channel and belong to the C4DT.
@@ -80,7 +73,7 @@ class AgentCommand(BaseModel):
 agent_get_command = Agent(
     **AGENT_CONFIG,
     description="Identifies the command needed to launch",
-    context={"user": "", "help": AgCmd.help()},
+    context={"user": "", "help": AgCmd.help(), "weekly_urls": []},
     response_model=AgentCommand,
     instructions=dedent(AGENT_PREPROMPT + """\
         As a first step, evaluate what kind of message the user writes to you.
@@ -173,6 +166,7 @@ def set_weekly_urls(user: str, args: list[str]):
 async def get_command(user: str, message: str) -> AgentCommand:
     await agent_logger.log("Parsing command")
     agent_get_command.context["user"] = user
+    agent_get_command.context["weekly_urls"] = get_weekly_urls(user)
     reply: RunResponse = await agent_get_command.arun(message)
     if isinstance(reply.content, AgentCommand):
         await agent_logger.debug(f"Found command {reply.content.command}")
@@ -242,6 +236,7 @@ async def answer_message(user: str, message: str) -> str:
         cmd = await get_command(user, message)
         if cmd.command == AgCmd.HELP:
             return AgCmd.help()
+
         elif cmd.command == AgCmd.GENERAL:
             await update_personal_interest(user, cmd.arguments)
             return await general_query(user, cmd.arguments)
@@ -249,11 +244,12 @@ async def answer_message(user: str, message: str) -> str:
         if cmd.command == AgCmd.PERSONAL_INTEREST:
             await update_personal_interest(user, cmd.arguments)
             return f"Updated personal interest to: {get_personal_interest(user)}"
+
         elif cmd.command == AgCmd.WEEKLY:
             if len(cmd.arguments) > 1:
                 await update_personal_interest(user, cmd.arguments[1:])
-                
             return f"Articles for your weekly picks:\n\n{"\n\n".join(await get_weekly(user, cmd.arguments))}"
+
         elif cmd.command == AgCmd.WEEKLY_URLS:
             set_weekly_urls(user, cmd.arguments)
             return f"Updated urls for your weekly picks:\n\n {get_weekly_urls(user)}"
@@ -263,4 +259,4 @@ async def answer_message(user: str, message: str) -> str:
         await agent_logger.error(e)
         await agent_logger.panic(''.join(tb_lines))  # Full formatted traceback
 
-        return f"Sorry - I couldn't infer what you meant. Here is what I know how to do: {AgCmd.help()}"
+        return f"Sorry, an error occured. Here is what I know how to do: {AgCmd.help()}"

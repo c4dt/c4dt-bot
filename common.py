@@ -29,6 +29,16 @@ else:
     print("Using LM Studio")
     model=LMStudio()
 
+# Global configuration for all agents
+AGENT_CONFIG = {
+    "model": model,
+    "use_json_mode": True,
+    "add_state_in_messages": True,
+    "add_context": True,
+    "show_tool_calls": False,
+    # "debug_mode": True
+}
+
 class ProgressLogger:
     async def msg(self, message: str) -> None:
         raise NotImplementedError

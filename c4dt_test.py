@@ -1,3 +1,5 @@
+# c4dt-test - testing the agent - Licensed under AGPLv3 or later
+
 import asyncio
 from common import StdLogger
 from agent import answer_message, general_query, get_command, AgCmd, set_weekly_urls, get_weekly_urls, set_personal_interest, get_personal_interest, update_personal_interest, get_weekly
