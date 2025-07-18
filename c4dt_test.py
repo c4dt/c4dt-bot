@@ -1,8 +1,9 @@
 # c4dt-test - testing the agent - Licensed under AGPLv3 or later
 
 import asyncio
-from common import StdLogger
-from agent import answer_message, general_query, get_command, AgCmd, set_weekly_urls, get_weekly_urls, set_personal_interest, get_personal_interest, update_personal_interest, get_weekly
+import datetime
+from common import ALLOWED_USERS, StdLogger, data_dir
+from agent import answer_message, general_query, get_command, AgCmd, set_weekly_urls, get_weekly_urls, set_personal_interest, get_personal_interest, update_personal_interest, get_weekly, list_news
 
 async def test_it():
     std_log = StdLogger()
@@ -70,7 +71,17 @@ async def test_it():
     # answer = await answer_message("ligasser", personal_interest_linus)
     # print(f"updating personal interests: {answer}")
     
-    answer = await answer_message("ligasser", "what are my personal preferences?")
-    print(f"quering for my personal preferences: {answer}")
+    # answer = await answer_message("ligasser", "what are my personal preferences?")
+    # print(f"quering for my personal preferences: {answer}")
+    
+    # message = "123"
+    # with open(f"{data_dir}/logger.log", "a") as f:
+    #     f.write(datetime.datetime.now().strftime("%d-%b-%Y (%H:%M:%S.%f)") + f" - {message}\n")
+    
+    # await list_news.arun("https://news.ycombinator.com")
+    # print(list_news.session_state)
+
+    if "@ligasser:epfl.ch" in ALLOWED_USERS:
+        print("is allowed")
 
 asyncio.run(test_it())

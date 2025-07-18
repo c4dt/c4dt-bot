@@ -1,3 +1,5 @@
+import datetime
+import time
 from dotenv import load_dotenv
 from agno.models.lmstudio import LMStudio
 from agno.models.openai import OpenAIChat
@@ -6,6 +8,8 @@ from agno.models.anthropic import Claude
 import os
 import json
 import httpx
+
+CACHE_TIME = 3600
 
 load_dotenv()
 data_dir = os.environ.get("DATA_DIR", ".")
@@ -19,7 +23,7 @@ if os.environ.get("ANTHROPIC_API_KEY", "0") != "0":
     model=Claude(id="claude-3-7-sonnet-latest")
 elif os.environ.get("OPENAI_API_KEY", "0") != "0":
     print("Using OpenAI GPT-4.1")
-    model=OpenAIChat(id="gpt-4.1")
+    model=OpenAIChat(id="gpt-4.1-mini")
 elif os.environ.get("OPENAI_LIKE", "0") != "0":
     print("Using OpenAI-like for AnythingLLM")
     model=OpenAILike(api_key=os.getenv("OPENAI_LIKE"),
@@ -38,6 +42,7 @@ AGENT_CONFIG = {
     "show_tool_calls": False,
     # "debug_mode": True
 }
+ALLOWED_USERS = set(os.environ.get("ALLOWED_USERS", "").split(","))
 
 class ProgressLogger:
     async def msg(self, message: str) -> None:
@@ -78,13 +83,17 @@ def cache_to_file(func):
         # Check if result is already cached
         key = str(args)
         if key in cache:
-            return cache[key]
+            if time.time() - cache[key]["time"] < CACHE_TIME:
+                print(f"Returning cache for {key}")
+                return cache[key]["result"]
+
+            print(f"Cache expired for {key}")
         
         # Call the function and cache the result
         result = func(*args)
-        cache[key] = result
+        cache[key] = {"time": time.time(), "result": result}
         with open(cache_file, "w") as f:
-            json.dump(cache, f)
+            json.dump(cache, f, indent=2)
         return result
     
     return wrapper

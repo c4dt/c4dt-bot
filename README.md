@@ -102,8 +102,10 @@ FIRECRAWL_API_KEY=_very_secret_
 
 # If this is set, then all data, session storage, and such, is stored under
 # this directory. Defaults to ".".
-
 # DATA_DIR=.
+
+# A comma-separated list of users to allow.
+ALLOWED_USERS=@aad:epfl.ch,@cdengler:epfl.ch,@ligasser:epfl.ch
 ```
 
 # Running

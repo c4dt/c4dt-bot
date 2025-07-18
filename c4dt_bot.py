@@ -16,13 +16,15 @@
 
 
 import datetime
+from typing import Set
 from dotenv import load_dotenv
 import os
+import nio
 import simplematrixbotlib as botlib
 from nio import RoomMessageText
 
-from agent import answer_message, set_logger
-from common import ProgressLogger, data_dir
+from agent import AgCmd, answer_message, set_logger
+from common import ALLOWED_USERS, ProgressLogger, data_dir
 
 load_dotenv()
 matrix_home = os.environ.get("MATRIX_HOME")
@@ -38,6 +40,7 @@ config.store_path = f"{data_dir}/store"
 config.encryption_enabled = True  # Automatically enabled by installing encryption support
 config.emoji_verify = True
 config.ignore_unverified_devices = True
+config.allowlist = ALLOWED_USERS
 
 creds = botlib.Creds(matrix_home, matrix_login, matrix_pass,
                      session_stored_file=f"{data_dir}/session.txt")
@@ -45,15 +48,17 @@ bot = botlib.Bot(creds, config)
 PREFIX = '!'
 
 class MatrixLogger(ProgressLogger):
-    def __init__(self, room) -> None:
+    def __init__(self, room, user) -> None:
         self.room = room
+        self.user = user
     
     async def msg(self, message: str) -> None:
         print(self.room, message)
         with open(f"{data_dir}/logger.log", "a") as f:
-            f.write(datetime.datetime.now().strftime("%d-%b-%Y (%H:%M:%S.%f)") + message)
+            f.write(datetime.datetime.now().strftime("%d-%b-%Y (%H:%M:%S.%f)") + 
+                    f" - {self.user}/{self.room} {message}\n")
             
-        await bot.api.send_text_message(self.room.room_id, message)
+        await bot.api.send_text_message(self.room, message)
         
     async def log(self, message: str) -> None:
         await self.msg(f"* {message}")
@@ -70,13 +75,38 @@ class MatrixLogger(ProgressLogger):
     async def panic(self, message: str) -> None:
         await self.msg(f"PANIC: {message}")
 
+joined = set()
+
 @bot.listener.on_message_event
-async def echo(room, message: RoomMessageText):
+async def command(room, message: RoomMessageText):
     match = botlib.MessageMatch(room, message, bot, PREFIX)
     
     if match.is_not_from_this_bot():
-        set_logger(MatrixLogger(room))
-        answer = await answer_message(message.sender, message.body)
-        await bot.api.send_markdown_message(room.room_id, answer)
+        set_logger(MatrixLogger(room.room_id, message.sender))
+        if match.is_from_allowed_user():
+            if message.sender in joined:
+                joined.remove(message.sender)
+                await bot.api.send_markdown_message(room.room_id, f"Welcome to the C4DT Chatbot!")
+                await bot.api.send_markdown_message(room.room_id, AgCmd.help())
+                await bot.api.send_markdown_message(room.room_id, 
+                                              f"You can find some examples of usage in the [README](https://github.com/c4dt/c4dt-bot?tab=readme-ov-file#tldr)")
+            else:
+                answer = await answer_message(message.sender, message.body)
+                await bot.api.send_markdown_message(room.room_id, answer)
+        else:
+            await bot.api.send_markdown_message(room.room_id, "You are not allowed to interact with the C4DT-Bot.")
+
+@bot.listener.on_custom_event(nio.RoomCreateEvent)
+async def created(room, event):
+    print(f"Room {room}\nEvent {event}")
+    logger = MatrixLogger(room.room_id, event.sender)
+    if event.sender in ALLOWED_USERS:
+        await logger.msg(f"Authorized User")
+        joined.add(event.sender)
+    else:
+        await logger.msg(f"You are not allowed to interact with the C4DT-Bot")
+        
+    print(f"A user {event.sender} joined the room({room.room_id}) and is allowed: {event.sender in ALLOWED_USERS}.")
+    print(f"{event}")
 
 bot.run()

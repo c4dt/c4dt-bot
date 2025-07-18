@@ -137,7 +137,7 @@ def set_personal_interest(user, personal_interest) -> str:
     all_personal_interests = get_all_personal_interests()
     all_personal_interests[user] = personal_interest
     with open(FILE_PERSONALITIES, "w") as f:
-        json.dump(all_personal_interests, f)
+        json.dump(all_personal_interests, f, indent=2)
     
 def get_weekly_urls_all() -> dict[str, list[str]]:
     if os.path.exists(FILE_WEEKLY_URLS):
