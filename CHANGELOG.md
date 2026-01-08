@@ -1,3 +1,7 @@
+2026-01-08 - [0.3]:
+- Added Firecrawl to replace get_url
+- Made WEEKLY_URLS behave better when adding / modifying URLs
+
 2025-07-18 - [0.2]:
 - Adding cache expiration
 - Fixing logs
