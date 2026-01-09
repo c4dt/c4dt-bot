@@ -198,6 +198,8 @@ def get_weekly_urls(user) -> list[str]:
             "https://news.ycombinator.com",
             "https://www.bbc.com/innovation",
             "https://www.404media.co/",
+            "https://www.euronews.com/next/tech-news",
+            "",
         ]
 
 

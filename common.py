@@ -42,8 +42,8 @@ AGENT_CONFIG = {
     "use_json_mode": True,
     "add_state_in_messages": True,
     "add_context": True,
-    "show_tool_calls": False,
-    # "debug_mode": True
+    # "show_tool_calls": True,
+    # "debug_mode": True,
 }
 ALLOWED_USERS = set(os.environ.get("ALLOWED_USERS", "").split(","))
 
