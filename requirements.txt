@@ -1,12 +1,10 @@
-agno==1.7.4
-anthropic==0.75.0
-atomicwrites==1.4.1
-cachetools==6.2.4
-firecrawl-py==2.16.1
-openai==2.14.0
-peewee==3.19.0
-pydantic==2.12.5
-pydantic-settings==2.12.0
-python-dotenv==1.2.1
+agno==2.8.1
+anthropic==0.119.0
+firecrawl-py==4.32.1
+openai==2.48.0
+pydantic==2.13.4
+python-dotenv==1.2.2
+simplematrixbotlib==2.13.1
+# python-olm 3.2.16 fails to compile its bundled libolm under modern clang;
+# 3.1.3 builds and links against the system libolm (3.2.16, from devbox `olm`).
 python-olm==3.1.3
-simplematrixbotlib==2.12.3

@@ -29,25 +29,29 @@ class NewsSummary(BaseModel):
     )
 
 
-async def add_news(agent: Agent, news: NewsSummary):
-    """Adds a new summary to the list of news"""
-    await wp_logger.trace(f"Adding news for {news.url}")
-    agent.session_state["news_list"].append(news)
+class NewsList(BaseModel):
+    news: list[NewsSummary] = Field(
+        default_factory=list,
+        description="The most relevant articles found on the page",
+    )
 
 
 list_news = Agent(
     **AGENT_CONFIG,
     description="Fetches the latest news and returns a summary",
-    tools=[FirecrawlTools(crawl=False), add_news],
-    session_state={"news_list": []},
-    context={"personal_interest": "", "info": ""},
+    tools=[FirecrawlTools()],
+    dependencies={"personal_interest": "", "info": ""},
+    output_schema=NewsList,
     instructions=dedent("""\
-        Visit the url from the prompt, and then choose the 5 most relevant articles related to digital trust to the news_list.
+        Visit the url from the prompt, and then choose the 5 most relevant articles related to digital trust.
+        Return them as the 'news' list of the response model.
         For the dt_relevance field, only consider the relevance with regard to digital trust, cybersecurity, policy,
         attacks, as well as defenses. Consider articles which talk about defenses or how to fix
         privacy issues higher than articles which only complain about those issues.
 
-        You can find the personal_relevance and optional additional infos in the context.
+        You can find the personal_interest and optional additional info in the context.
+
+        For the final reply, only send the JSON, nothing else. Don't introduce the JSON, just send the json.
         """),
 )
 
@@ -63,7 +67,8 @@ class UrlList(BaseModel):
 order_news = Agent(
     **AGENT_CONFIG,
     description="Returns the top articles by relevance",
-    context={"number_takes": "3", "news_list": ""},
+    dependencies={"number_takes": "3", "news_list": ""},
+    output_schema=UrlList,
     instructions=dedent("""\
         You can find a list of articles scraped by the previous agent in the news_list context.
         You need to return the top number_takes articles from this list.
@@ -74,7 +79,6 @@ order_news = Agent(
         For the final reply, only send the JSON, nothing else. Don't introduce the JSON, just send the json.
         The result will be parsed with JSON.parse, so don't introduce it in any way.
         """),
-    response_model=UrlList,
 )
 
 
@@ -86,8 +90,9 @@ class WeeklyPick(BaseModel):
 write_weekly = Agent(
     **AGENT_CONFIG,
     description="Write a weekly pick for the article",
-    tools=[FirecrawlTools(crawl=False)],
-    context={"personal_interest": "", "article": ""},
+    tools=[FirecrawlTools()],
+    dependencies={"personal_interest": "", "article": ""},
+    output_schema=WeeklyPick,
     instructions=dedent("""\
         For the URL in the prompt, fetch the website, and create a weekly pick.
         A weekly pick has the following format:
@@ -106,5 +111,4 @@ write_weekly = Agent(
         The personal interest of the user is defined in the personal_interest context.
         You can find previously summarized information about the article in the article context.
         """),
-    response_model=WeeklyPick,
 )

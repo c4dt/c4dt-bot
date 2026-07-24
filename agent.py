@@ -7,11 +7,20 @@ import traceback
 from enum import Enum
 from textwrap import dedent
 
-from agno.agent import Agent, RunResponse
+from agno.agent import Agent
+from agno.run.agent import RunOutput
 from pydantic import BaseModel, Field
 
 from common import AGENT_CONFIG, ProgressLogger, StdLogger, data_dir
-from weekly_picks import UrlList, WeeklyPick, list_news, order_news, write_weekly
+from weekly_picks import (
+    NewsList,
+    NewsSummary,
+    UrlList,
+    WeeklyPick,
+    list_news,
+    order_news,
+    write_weekly,
+)
 from weekly_picks import set_logger as set_wp_logger
 
 agent_logger = StdLogger()
@@ -86,8 +95,8 @@ class AgentCommand(BaseModel):
 agent_get_command = Agent(
     **AGENT_CONFIG,
     description="Identifies the command needed to launch",
-    context={"user": "", "help": AgCmd.help(), "weekly_urls": []},
-    response_model=AgentCommand,
+    dependencies={"user": "", "help": AgCmd.help(), "weekly_urls": []},
+    output_schema=AgentCommand,
     instructions=dedent(
         AGENT_PREPROMPT
         + """\
@@ -120,7 +129,7 @@ agent_get_command = Agent(
 agent_update_personal_interest = Agent(
     **AGENT_CONFIG,
     description="Updates the personal interest of the user",
-    context={"user": "unknown", "personal_interest": ""},
+    dependencies={"user": "unknown", "personal_interest": ""},
     instructions=dedent(
         AGENT_PREPROMPT
         + """\
@@ -144,7 +153,7 @@ agent_update_personal_interest = Agent(
 agent_general = Agent(
     **AGENT_CONFIG,
     description="Run a general query from the user",
-    context={"user": "unknown", "personal_interest": "", "urls": []},
+    dependencies={"user": "unknown", "personal_interest": "", "urls": []},
     instructions=dedent(
         AGENT_PREPROMPT
         + """\
@@ -215,9 +224,9 @@ def set_weekly_urls(user: str, args: list[str]):
 
 async def get_command(user: str, message: str) -> AgentCommand:
     await agent_logger.log("Parsing command")
-    agent_get_command.context["user"] = user
-    agent_get_command.context["weekly_urls"] = get_weekly_urls(user)
-    reply: RunResponse = await agent_get_command.arun(message)
+    agent_get_command.dependencies["user"] = user
+    agent_get_command.dependencies["weekly_urls"] = get_weekly_urls(user)
+    reply: RunOutput = await agent_get_command.arun(message)
     if isinstance(reply.content, AgentCommand):
         await agent_logger.debug(f"Found command {reply.content.command}")
         return reply.content
@@ -225,31 +234,33 @@ async def get_command(user: str, message: str) -> AgentCommand:
         raise Exception("Couldn't interpret command")
 
 
-async def get_weekly(user: str, args: list[str]) -> str:
+async def get_weekly(user: str, args: list[str]) -> list[str]:
     number_takes = (args + ["3"])[0]
     info = (args + ["", ""])[1]
 
     personal_interest = get_personal_interest(user)
-    list_news.session_state = {"news_list": []}
-    list_news.context = {"personal_interest": personal_interest, "info": info}
+    list_news.dependencies = {"personal_interest": personal_interest, "info": info}
     urls = get_weekly_urls(user)
 
     await agent_logger.log(
         f"Getting a total of {number_takes} picks with info='{info}' from urls={urls}"
     )
 
+    news_list: list[NewsSummary] = []
     for url in urls:
         await agent_logger.debug(f"Scraping {url} for articles")
-        await list_news.arun(url)
+        scraped: RunOutput = await list_news.arun(url)
+        if isinstance(scraped.content, NewsList):
+            news_list.extend(scraped.content.news)
+        else:
+            await agent_logger.error(f"Couldn't scrape articles from {url}")
 
-    await agent_logger.debug(
-        f"Got a total of {len(list_news.session_state['news_list'])} articles"
-    )
+    await agent_logger.debug(f"Got a total of {len(news_list)} articles")
 
     await agent_logger.log("Ordering articles by relevance")
-    order_news.context["news_list"] = list_news.session_state["news_list"]
-    order_news.context["number_takes"] = number_takes
-    ordered: RunResponse = await order_news.arun("follow the instructions")
+    order_news.dependencies["news_list"] = [n.model_dump() for n in news_list]
+    order_news.dependencies["number_takes"] = number_takes
+    ordered: RunOutput = await order_news.arun("follow the instructions")
 
     if not isinstance(ordered.content, UrlList):
         await agent_logger.panic(
@@ -260,12 +271,12 @@ async def get_weekly(user: str, args: list[str]) -> str:
     await agent_logger.debug(f"Ordered list of URLs: {ordered.content.url_list}")
 
     await agent_logger.log("Starting to create summary")
-    write_weekly.context["personal_interest"] = personal_interest
+    write_weekly.dependencies["personal_interest"] = personal_interest
     takes = []
     for article in ordered.content.url_list:
         await agent_logger.debug(f"Summarizing {article.url}")
-        write_weekly.context["article"] = article
-        wp: RunResponse = await write_weekly.arun(article.url)
+        write_weekly.dependencies["article"] = article.model_dump()
+        wp: RunOutput = await write_weekly.arun(article.url)
         if isinstance(wp.content, WeeklyPick):
             take = f'"{wp.content.description}" - {wp.content.url}'
             takes.append(take)
@@ -277,7 +288,7 @@ async def get_weekly(user: str, args: list[str]) -> str:
 
 async def update_personal_interest(user: str, args: list[str]):
     await agent_logger.log("Updating personal interests")
-    agent_update_personal_interest.context = {
+    agent_update_personal_interest.dependencies = {
         "user": user,
         "personal_interest": get_personal_interest(user),
     }
@@ -286,7 +297,7 @@ async def update_personal_interest(user: str, args: list[str]):
 
 
 async def general_query(user: str, args: list[str]):
-    agent_general.context = {
+    agent_general.dependencies = {
         "user": user,
         "personal_interest": get_personal_interest(user),
         "urls": get_weekly_urls(user),

@@ -20,8 +20,8 @@ except:
     ""
 
 if os.environ.get("ANTHROPIC_API_KEY", "0") != "0":
-    print("Using Anthropic Claude Sonnet 4.5")
-    model = Claude(id="claude-4-5-sonnet")
+    print("Using Anthropic Claude Sonnet 5")
+    model = Claude(id="claude-sonnet-5")
 elif os.environ.get("OPENAI_API_KEY", "0") != "0":
     print("Using OpenAI GPT-5-mini")
     model = OpenAIChat(id="gpt-5-mini")
@@ -36,13 +36,15 @@ else:
     print("Using LM Studio")
     model = LMStudio()
 
-# Global configuration for all agents
+# Global configuration for all agents.
+# agno v2 renamed `context` -> `dependencies`; `add_dependencies_to_context`
+# injects that dict into the model context (the instructions reference its keys
+# by name, e.g. "the news_list context"). Replaces v1's `add_context` /
+# `add_state_in_messages`.
 AGENT_CONFIG = {
     "model": model,
     "use_json_mode": True,
-    "add_state_in_messages": True,
-    "add_context": True,
-    # "show_tool_calls": True,
+    "add_dependencies_to_context": True,
     # "debug_mode": True,
 }
 ALLOWED_USERS = set(os.environ.get("ALLOWED_USERS", "").split(","))
